@@ -8,14 +8,16 @@
 (matrix/set-current-implementation :vectorz)
 
 (def training-input
-  [[0 0 1]
-   [0 1 1]
-   [1 0 1]
-   [1 1 1]])
+  (identity
+  ;; (matrix/array
+   [[0 0 1]
+    [0 1 1]
+    [1 0 1]
+    [1 1 1]]))
 
 (def training-output
-  (matrix/transpose
-   [[0 1 1 0]]))
+   (matrix/transpose
+    [[0 1 1 0]]))
 
 
 (defn random-synapses
@@ -47,7 +49,6 @@
   [neurons synapses]
   (sigmoid (matrix/dot neurons synapses)))
 
-
 (defn feed-forward
   [input & synapses]
   (case (count synapses)
@@ -74,7 +75,7 @@
      ))
 
 (defn apply-deltas [synapses neurons deltas learning-rate]
-  (+ @synapses
+  (+ synapses
      (* learning-rate
         (matrix/dot (matrix/transpose neurons) deltas))))
 
@@ -93,22 +94,69 @@
         output-error (errors training-output output-layer)
         ]
     (do
-      (reset! synapses-1
-              (apply-deltas synapses-1 hidden-layer output-delta 1))
-      (reset! synapses-0
-              (apply-deltas synapses-0 training-input hidden-delta 1))
+      (swap! synapses-1
+             #(apply-deltas % hidden-layer output-delta 1))
+      (swap! synapses-0
+             #(apply-deltas % training-input hidden-delta 1))
       (mean-error output-error)
       )))
+
+(defn train-prime
+  "Train the network and return the error"
+  [times training-input training-output]
+  (loop [times times syn0 @synapses-0 syn1 @synapses-1]
+           (if (<= times 0)
+             (do ; set the syn vals
+               (reset! synapses-1 syn1)
+               (reset! synapses-0 syn0)
+               (mean-error
+                (errors training-output
+                        (feed-forward
+                         training-input
+                         synapses-0 synapses-1)))
+               )
+             (let [
+                   hidden-layer (step-forward training-input syn0)
+                   output-layer (step-forward hidden-layer syn1)
+                   output-delta (output-deltas training-output output-layer)
+                   hidden-delta (hidden-deltas output-delta hidden-layer syn1)
+                   ]
+                 (recur (dec times)
+                        (apply-deltas syn0 training-input hidden-delta 1)
+                        (apply-deltas syn1 hidden-layer output-delta 1)
+                        ))
+
+               )
+             ))
+
+
+(def hidden-layer (step-forward training-input @synapses-0))
+(def output-layer (step-forward hidden-layer @synapses-1))
+(def output-delta (output-deltas training-output output-layer))
+(def hidden-delta (hidden-deltas output-delta hidden-layer @synapses-1))
+
+(matrix/shape
+ (apply-deltas @synapses-0 training-input hidden-delta 1))
+
+(matrix/shape
+ (apply-deltas @synapses-1 hidden-layer output-delta 1))
+
+
 
 ;; Train once
 (train training-input training-output)
 
 ;; Train 1000 passes
-(doseq [i (range 10000)]
-  (train training-input training-output))
+(time
+ (train-prime 10000 training-input training-output))
+
+;; (time
+;;  (doseq [i (range 10000)]
+;;    (train training-input training-output)))
+
 
 ;; Check results
 (feed-forward training-input synapses-0 synapses-1)
 
-;; Check results
-(feed-forward [[1 0 0]] synapses-0 synapses-1)
+;; Check results for new values
+(feed-forward [[0 0 0]] synapses-0 synapses-1)
