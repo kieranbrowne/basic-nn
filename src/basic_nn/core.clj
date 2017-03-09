@@ -2,52 +2,57 @@
   (:require [clojure.core.matrix :as matrix]
             [clojure.core.matrix.random :as random]
             [clojure.core.matrix.operators :refer :all]
-            [clojure.math.numeric-tower :refer [expt abs]]
+            [clojure.math.numeric-tower :refer [expt abs round]]
             ))
 
-(matrix/set-current-implementation :vectorz)
+;; (matrix/set-current-implementation :vectorz)
+
+(def training-data
+   ;; input => output
+   [ [0 0 1]   [ 0 ]
+     [0 1 1]   [ 1 ]
+     [1 0 1]   [ 1 ]
+     [1 1 1]   [ 0 ] ])
 
 (def training-input
-  (identity
-  ;; (matrix/array
-   [[0 0 1]
-    [0 1 1]
-    [1 0 1]
-    [1 1 1]]))
+  (take-nth 2 training-data))
 
 (def training-output
-   (matrix/transpose
-    [[0 1 1 0]]))
+  (take-nth 2 (rest training-data)))
 
 
-(defn random-synapses
-  "Create a matrix of random synaptic weights."
-  [from to]
+(defn matrix-of
+  "Return a matrix of results of a function"
+  [function shape]
   (matrix/array
-   (take from
-         (repeatedly
-          #(- (* 2 (take to (random/randoms))) 1)
-          ))))
+   (repeatedly (first shape)
+    (if (empty? (rest shape))
+      function
+      #(matrix-of function (rest shape))))))
+
+
+(defn random-synapse
+  "Random float between -1 and 1"
+  [] (dec (rand 2)))
 
 ;; synapses are mutable so I'm using atoms
-(def synapses-0 (atom (random-synapses 3 4)))
-(def synapses-1 (atom (random-synapses 4 1)))
+(def synapses-0 (atom (matrix-of random-synapse [3 5])))
+(def synapses-1 (atom (matrix-of random-synapse [5 1])))
 
-;; sigmoid fn
-(defn sigmoid [x]
-  (/ 1
-     (+ 1 (matrix/exp (- x)))))
+(defn activate
+  "Sigmoid function"
+  [x] (/ 1 (+ 1 (matrix/exp (- x)))))
 
-;; derivative of sigmoid
-(defn deriv [x]
-  (* x (- 1 x)))
+(defn deactivate
+  "Derivative of sigmoid"
+  [x] (* x (- 1 x)))
 
 
 (defn step-forward
   "For each step in feed forward, the new layer of neurons
   are a function of the previous layer and it's synapses"
   [neurons synapses]
-  (sigmoid (matrix/dot neurons synapses)))
+  (activate (matrix/dot neurons synapses)))
 
 (defn feed-forward
   [input & synapses]
@@ -64,14 +69,13 @@
 (defn errors [training-outputs real-outputs]
   (- training-outputs real-outputs))
 
-
 (defn output-deltas [targets outputs]
-  (* (deriv outputs)
+  (* (deactivate outputs)
      (- targets outputs)))
 
 (defn hidden-deltas [output-deltas neurons synapses]
   (* (matrix/dot output-deltas (matrix/transpose synapses))
-     (deriv neurons)
+     (deactivate neurons)
      ))
 
 (defn apply-deltas [synapses neurons deltas learning-rate]
@@ -125,38 +129,23 @@
                         (apply-deltas syn0 training-input hidden-delta 1)
                         (apply-deltas syn1 hidden-layer output-delta 1)
                         ))
-
                )
              ))
-
-
-(def hidden-layer (step-forward training-input @synapses-0))
-(def output-layer (step-forward hidden-layer @synapses-1))
-(def output-delta (output-deltas training-output output-layer))
-(def hidden-delta (hidden-deltas output-delta hidden-layer @synapses-1))
-
-(matrix/shape
- (apply-deltas @synapses-0 training-input hidden-delta 1))
-
-(matrix/shape
- (apply-deltas @synapses-1 hidden-layer output-delta 1))
-
 
 
 ;; Train once
 (train training-input training-output)
 
 ;; Train 1000 passes
-(time
- (train-prime 10000 training-input training-output))
+(train-prime 10000 training-input training-output)
 
-;; (time
-;;  (doseq [i (range 10000)]
-;;    (train training-input training-output)))
+;; Train 1000 passes
+(dotimes [i 10000]
+  (train training-input training-output))
 
 
 ;; Check results
 (feed-forward training-input synapses-0 synapses-1)
 
 ;; Check results for new values
-(feed-forward [[0 0 0]] synapses-0 synapses-1)
+(feed-forward [0 1 0] synapses-0 synapses-1)
